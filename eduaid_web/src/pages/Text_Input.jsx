@@ -9,6 +9,19 @@ import Switch from "react-switch";
 import { Link, useNavigate } from "react-router-dom";
 import apiClient from "../utils/apiClient";
 
+/**
+ * Utility to format byte counts. 
+ * Moved outside the component to satisfy CodeRabbit best practices.
+ */
+const formatBytes = (bytes) => {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  let i = Math.floor(Math.log(bytes) / Math.log(k));
+  if (i >= sizes.length) i = sizes.length - 1; 
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
 const Text_Input = () => {
   const navigate = useNavigate();
   const [text, setText] = useState("");
@@ -26,24 +39,31 @@ const Text_Input = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadSpeed, setUploadSpeed] = useState("");
 
-  /**
-   * Formats a byte count into a human-readable string.
-   * Now includes support for GB/TB and prevents index out-of-bounds.
-   */
-  const formatBytes = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    let i = Math.floor(Math.log(bytes) / Math.log(k));
-    if (i >= sizes.length) i = sizes.length - 1;
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
   const toggleSwitch = () => {
     setIsToggleOn((isToggleOn + 1) % 2);
   };
 
-  const handleFileUpload = async (event) => {
+  /**
+   * Resets upload-related states. 
+   * Resetting rawFileSize, progress, and speed as requested by review.
+   */
+  const handleRemoveFile = (e) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    setFileName("");
+    setRawFileSize(0); 
+    setUploadError(""); 
+    setText("");
+    setUploadProgress(0); 
+    setUploadSpeed(""); 
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleFileUpload = (event) => {
     const file = event.target.files[0];
     if (file) {
       const MAX_FILE_SIZE = 10 * 1024 * 1024; 
@@ -53,6 +73,7 @@ const Text_Input = () => {
         return;
       }
 
+      setDocUrl(""); 
       setFileName(file.name);
       setRawFileSize(file.size);
       setIsUploading(true);
@@ -65,61 +86,54 @@ const Text_Input = () => {
       const formData = new FormData();
       formData.append("file", file);
 
-      try {
-        const response = await apiClient.post("/upload_endpoint", formData, {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-          onUploadProgress: (progressEvent) => {
-            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            setUploadProgress(percentCompleted);
+      // Using XHR because fetch/apiClient does not support onUploadProgress.
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${process.env.REACT_APP_API_URL || ""}/upload_endpoint`);
+      
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0) {
+          const percentCompleted = Math.round((event.loaded * 100) / event.total);
+          setUploadProgress(percentCompleted);
 
-            const timeElapsed = (Date.now() - startTime) / 1000; 
-            if (timeElapsed > 0) {
-              const uploadSpeedBytes = progressEvent.loaded / timeElapsed;
-              setUploadSpeed(`${formatBytes(uploadSpeedBytes)}/s`);
-            }
-          },
-        });
-
-        if (response.extractedText) {
-          setText(response.extractedText);
-          setUploadProgress(100);
-          setUploadSpeed("Completed");
-        } else {
-          setUploadError("No text could be extracted from this file. Please try another.");
-          setFileName("");
-          setUploadProgress(0);
-          setUploadSpeed("");
-          if (fileInputRef.current) fileInputRef.current.value = "";
+          const timeElapsed = (Date.now() - startTime) / 1000; 
+          if (timeElapsed > 0) {
+            const uploadSpeedBytes = event.loaded / timeElapsed;
+            setUploadSpeed(`${formatBytes(uploadSpeedBytes)}/s`);
+          }
         }
-        
-      } catch (error) {
-        console.error("Upload failed:", error);
-        setUploadError("Failed to upload the file. Please try again.");
-        setUploadSpeed("Error");
-        setFileName("");
-        if (fileInputRef.current) fileInputRef.current.value = "";
-      } finally {
-        setIsUploading(false);
-      }
-    }
-  };
+      };
 
-  /**
-   * Resets all file-upload related state, including rawFileSize.
-   */
-  const handleRemoveFile = (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    setFileName("");
-    setRawFileSize(0); 
-    setUploadError("");
-    setText("");
-    setUploadProgress(0);
-    setUploadSpeed("");
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const response = JSON.parse(xhr.responseText);
+            if (response.extractedText) {
+              setText(response.extractedText);
+              setUploadProgress(100);
+              setUploadSpeed("Completed");
+            } else {
+              setUploadError("No text extracted. Try another file.");
+              setUploadProgress(0);
+            }
+          } catch (e) {
+            setUploadError("Invalid response from server.");
+            setUploadProgress(0);
+          }
+        } else {
+          setUploadError("Server error. File upload failed.");
+          setUploadProgress(0);
+        }
+        setIsUploading(false);
+      };
+
+      xhr.onerror = () => {
+        setUploadError("Network error. Is the backend running?");
+        setUploadProgress(0);
+        setUploadSpeed("");
+        setIsUploading(false);
+      };
+
+      xhr.send(formData);
     }
   };
 
@@ -130,16 +144,19 @@ const Text_Input = () => {
   };
 
   const handleSaveToLocalStorage = async () => {
-    setLoading(true);
+    if (fileName && docUrl) {
+      setUploadError("Please use either file upload or Google Doc URL.");
+      return;
+    }
 
+    setLoading(true);
     if (docUrl) {
       try {
         const data = await apiClient.post("/get_content", { document_url: docUrl });
         setDocUrl("");
         setText(data || "Error in retrieving");
       } catch (error) {
-        console.error("Error:", error);
-        setText("Error retrieving Google Doc content");
+        setUploadError("Failed to fetch Google Doc content.");
       } finally {
         setLoading(false);
       }
@@ -266,8 +283,7 @@ const Text_Input = () => {
                <p className="text-[#00CBE7] text-lg font-bold">{fileName}</p>
                <button 
                  onClick={handleRemoveFile} 
-                 className="bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                 title="Remove file"
+                 className="bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600 transition"
                  disabled={isUploading}
                >
                  <MdClose size={18} />
@@ -277,7 +293,7 @@ const Text_Input = () => {
             <p className="text-white text-lg mb-2">Choose a file (PDF, MP3 supported)</p>
           )}
 
-          {isUploading && (
+          {(isUploading || uploadProgress > 0) && (
             <div className="w-full max-w-md mx-auto my-4 flex flex-col">
               <div className="flex justify-between text-xs font-medium mb-2">
                 <span className="text-gray-300">
@@ -290,10 +306,9 @@ const Text_Input = () => {
                   {uploadProgress}%
                 </span>
               </div>
-
               <div className="w-full bg-gray-700 rounded-full h-2.5">
                 <div
-                  className="bg-gradient-to-r from-[#FF005C] to-[#7600F2] h-2.5 rounded-full transition-all duration-300 ease-out"
+                  className={`h-2.5 rounded-full transition-all duration-300 ${uploadError ? 'bg-red-500' : 'bg-gradient-to-r from-[#FF005C] to-[#7600F2]'}`}
                   style={{ width: `${uploadProgress}%` }}
                 />
               </div>
@@ -308,14 +323,12 @@ const Text_Input = () => {
             type="file" 
             ref={fileInputRef} 
             onChange={handleFileUpload} 
-            style={{ display: "none" }} 
+            className="hidden" 
             disabled={isUploading} 
             accept=".pdf,.mp3,audio/*,application/pdf"
           />
           <button
-            className={`my-4 text-lg rounded-2xl text-white border px-6 py-2 ${
-              isUploading ? 'bg-gray-600 border-gray-500 cursor-not-allowed' : 'bg-[#3e506380] border-[#cbd0dc80]'
-            }`}
+            className={`my-4 text-lg rounded-2xl text-white border px-6 py-2 ${isUploading ? 'bg-gray-600 cursor-not-allowed' : 'bg-[#3e506380] border-[#cbd0dc80]'}`}
             onClick={handleClick}
             disabled={isUploading}
           >
@@ -327,7 +340,10 @@ const Text_Input = () => {
             placeholder="Enter Google Doc URL"
             className="bg-transparent mt-4 border border-[#cbd0dc80] text-white text-lg sm:text-xl rounded-2xl px-4 py-2 w-full sm:w-2/3 outline-none"
             value={docUrl}
-            onChange={(e) => setDocUrl(e.target.value)}
+            onChange={(e) => {
+              setDocUrl(e.target.value);
+              if (e.target.value) handleRemoveFile(); 
+            }}
             disabled={isUploading}
           />
         </div>
