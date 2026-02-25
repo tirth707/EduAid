@@ -9,10 +9,6 @@ import Switch from "react-switch";
 import { Link, useNavigate } from "react-router-dom";
 import apiClient from "../utils/apiClient";
 
-/**
- * Utility to format byte counts. 
- * Moved outside the component to satisfy CodeRabbit best practices.
- */
 const formatBytes = (bytes) => {
   if (bytes === 0) return '0 Bytes';
   const k = 1024;
@@ -43,10 +39,6 @@ const Text_Input = () => {
     setIsToggleOn((isToggleOn + 1) % 2);
   };
 
-  /**
-   * Resets upload-related states. 
-   * Resetting rawFileSize, progress, and speed as requested by review.
-   */
   const handleRemoveFile = (e) => {
     if (e) {
       e.stopPropagation();
@@ -69,6 +61,10 @@ const Text_Input = () => {
       const MAX_FILE_SIZE = 10 * 1024 * 1024; 
       if (file.size > MAX_FILE_SIZE) {
         setUploadError("File is too large. Please select a file under 10MB.");
+        setFileName("");
+        setRawFileSize(0);
+        setUploadProgress(0);
+        setUploadSpeed("");
         if (fileInputRef.current) fileInputRef.current.value = "";
         return;
       }
@@ -86,7 +82,6 @@ const Text_Input = () => {
       const formData = new FormData();
       formData.append("file", file);
 
-      // Using XHR because fetch/apiClient does not support onUploadProgress.
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `${process.env.REACT_APP_API_URL || ""}/upload_endpoint`);
       
@@ -107,7 +102,7 @@ const Text_Input = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             const response = JSON.parse(xhr.responseText);
-            if (response.extractedText) {
+            if (response.extractedText && response.extractedText.trim()) {
               setText(response.extractedText);
               setUploadProgress(100);
               setUploadSpeed("Completed");
@@ -160,7 +155,7 @@ const Text_Input = () => {
       } finally {
         setLoading(false);
       }
-    } else if (text) {
+    } else if (text && text.trim()) {
       localStorage.setItem("textContent", text);
       localStorage.setItem("difficulty", difficulty);
       localStorage.setItem("numQuestions", numQuestions);
@@ -325,7 +320,7 @@ const Text_Input = () => {
             onChange={handleFileUpload} 
             className="hidden" 
             disabled={isUploading} 
-            accept=".pdf,.mp3,audio/*,application/pdf"
+            accept=".pdf,.mp3,application/pdf,audio/mpeg"
           />
           <button
             className={`my-4 text-lg rounded-2xl text-white border px-6 py-2 ${isUploading ? 'bg-gray-600 cursor-not-allowed' : 'bg-[#3e506380] border-[#cbd0dc80]'}`}
