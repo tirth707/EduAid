@@ -26,6 +26,10 @@ const Text_Input = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadSpeed, setUploadSpeed] = useState("");
 
+  /**
+   * Formats a byte count into a human-readable string.
+   * Now includes support for GB/TB and prevents index out-of-bounds.
+   */
   const formatBytes = (bytes) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -102,11 +106,14 @@ const Text_Input = () => {
     }
   };
 
+  /**
+   * Resets all file-upload related state, including rawFileSize.
+   */
   const handleRemoveFile = (e) => {
     e.stopPropagation();
     e.preventDefault();
     setFileName("");
-    setRawFileSize(0);
+    setRawFileSize(0); 
     setUploadError("");
     setText("");
     setUploadProgress(0);
@@ -277,7 +284,7 @@ const Text_Input = () => {
                   {formatBytes((rawFileSize * uploadProgress) / 100)} / {formatBytes(rawFileSize)}
                 </span>
                 <span className="text-[#FF005C]">
-                  {uploadSpeed}
+                  {uploadProgress === 100 ? "Completed" : uploadSpeed}
                 </span>
                 <span className="text-[#00CBE7] font-bold">
                   {uploadProgress}%
@@ -297,7 +304,14 @@ const Text_Input = () => {
              <div className="text-red-500 font-bold bg-red-100 bg-opacity-20 p-2 rounded-lg my-2">{uploadError}</div>
           )}
 
-          <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{ display: "none" }} disabled={isUploading} />
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileUpload} 
+            style={{ display: "none" }} 
+            disabled={isUploading} 
+            accept=".pdf,.mp3,audio/*,application/pdf"
+          />
           <button
             className={`my-4 text-lg rounded-2xl text-white border px-6 py-2 ${
               isUploading ? 'bg-gray-600 border-gray-500 cursor-not-allowed' : 'bg-[#3e506380] border-[#cbd0dc80]'
