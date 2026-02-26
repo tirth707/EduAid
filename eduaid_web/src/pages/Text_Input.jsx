@@ -8,6 +8,7 @@ import { MdClose } from "react-icons/md";
 import Switch from "react-switch";
 import { Link, useNavigate } from "react-router-dom";
 import apiClient from "../utils/apiClient";
+import { useQuizHistory } from "../hooks/useQuizHistory";
 
 const formatBytes = (bytes) => {
   if (bytes === 0) return '0 Bytes';
@@ -35,6 +36,8 @@ const Text_Input = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadSpeed, setUploadSpeed] = useState("");
 
+  const { addQuiz } = useQuizHistory();
+
   const toggleSwitch = () => {
     setIsToggleOn((isToggleOn + 1) % 2);
   };
@@ -58,6 +61,13 @@ const Text_Input = () => {
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
     if (file) {
+      const allowedTypes = ['application/pdf', 'audio/mpeg'];
+      if (!allowedTypes.includes(file.type)) {
+        setUploadError("Unsupported file type. Please select a PDF or MP3 file.");
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+
       const MAX_FILE_SIZE = 10 * 1024 * 1024; 
       if (file.size > MAX_FILE_SIZE) {
         setUploadError("File is too large. Please select a file under 10MB.");
@@ -212,12 +222,7 @@ const Text_Input = () => {
         qaPair: responseData,
       };
 
-      let last5Quizzes = JSON.parse(localStorage.getItem("last5Quizzes")) || [];
-      last5Quizzes.push(quizDetails);
-      if (last5Quizzes.length > 5) {
-        last5Quizzes.shift(); 
-      }
-      localStorage.setItem("last5Quizzes", JSON.stringify(last5Quizzes));
+      addQuiz(quizDetails);
 
       navigate("/output");
     } catch (error) {
@@ -264,6 +269,7 @@ const Text_Input = () => {
             style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
             value={text}
             onChange={(e) => setText(e.target.value)}
+            disabled={isUploading}
           />
           <style>{`textarea::-webkit-scrollbar { display: none; }`}</style>
         </div>
