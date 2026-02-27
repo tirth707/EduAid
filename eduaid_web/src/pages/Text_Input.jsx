@@ -15,7 +15,6 @@ const formatBytes = (bytes) => {
   const k = 1024;
   const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
   let i = Math.floor(Math.log(bytes) / Math.log(k));
-  // CodeRabbit Fix: Clamp i to prevent negative index errors
   i = Math.max(0, Math.min(i, sizes.length - 1)); 
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
@@ -63,10 +62,13 @@ const Text_Input = () => {
     const file = event.target.files[0];
     if (file) {
       const allowedTypes = new Set(['application/pdf', 'audio/mpeg']);
+      const genericTypes = new Set(['', 'application/octet-stream']);
       const hasAllowedExtension = /\.(pdf|mp3)$/i.test(file.name || "");
 
-      if (!allowedTypes.has(file.type) && !hasAllowedExtension) {
-        setUploadError("Unsupported file type. Please select a PDF or MP3 file.");
+      const isValid = allowedTypes.has(file.type) || (genericTypes.has(file.type) && hasAllowedExtension);
+
+      if (!isValid) {
+        setUploadError("Unsupported file type or MIME mismatch. Please select a valid PDF or MP3 file.");
         if (fileInputRef.current) fileInputRef.current.value = "";
         return;
       }
@@ -98,7 +100,6 @@ const Text_Input = () => {
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `${process.env.REACT_APP_API_URL || ""}/upload_endpoint`);
       
-      // CodeRabbit Fix: Add 30-second timeout and handler
       xhr.timeout = 30000; 
       xhr.ontimeout = () => {
         setUploadError("Upload timed out. Please try again.");
