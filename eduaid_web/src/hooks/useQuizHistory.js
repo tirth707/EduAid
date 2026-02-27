@@ -25,12 +25,8 @@ export const useQuizHistory = () => {
   };
 
   const clearHistory = () => {
-    try {
-      localStorage.removeItem("quizHistory");
-      setHistory([]);
-    } catch (error) {
-      console.error("Error clearing history:", error);
-    }
+    // CodeRabbit Fix: Removed manual removeItem as useEffect handles persistence
+    setHistory([]);
   };
 
   return { history, addQuiz, clearHistory };
